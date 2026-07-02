@@ -16,6 +16,7 @@ def generate_right_eye(
     max_disparity: int = 70,
     smoothing: int = 3,
     inpaint_radius: int = 5,
+    focal_plane: float = 0.0,
 ) -> np.ndarray:
     """
     Generates a right-eye view by mapping right-image pixels back to the left image.
@@ -25,8 +26,10 @@ def generate_right_eye(
     h, w = left_img.shape[:2]
     # --- 1. Smooth depth & compute disparity ---
     depth_smoothed = smooth_depth_map(depth_map, smoothing)
-    disp = (depth_smoothed * stereo_strength * w).astype(np.float32)
-    disp = np.clip(disp, 0, max_disparity)
+    # Calculate disparity relative to the focal plane.
+    # Positive disp = pops out (shifts left), Negative disp = pushes in (shifts right)
+    disp = ((depth_smoothed - focal_plane) * stereo_strength * w).astype(np.float32)
+    disp = np.clip(disp, -max_disparity, max_disparity)
 
     x_map_2d = np.full((h, w), -1, dtype=np.int32)
     # --- 2. Inverse map with stretch rejection ---
