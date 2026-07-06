@@ -51,13 +51,10 @@ def estimate_depth(image: np.ndarray) -> np.ndarray:
     if depth_map.shape[:2] != (h, w):
         depth_map = cv2.resize(depth_map, (w, h), interpolation=cv2.INTER_LINEAR)
 
-    # Normalize to [0, 1] using robust percentiles to ignore outliers
-    # This ensures the true background is pinned exactly to 0.0,
-    # preventing the entire image frame from shifting.
-    d_min = np.percentile(depth_map, 2)
-    d_max = np.percentile(depth_map, 98)
+    # Normalize to [0, 1]
+    d_min, d_max = depth_map.min(), depth_map.max()
     if d_max - d_min > 0:
-        depth_map = np.clip((depth_map - d_min) / (d_max - d_min), 0, 1)
+        depth_map = (depth_map - d_min) / (d_max - d_min)
     else:
         depth_map = np.zeros_like(depth_map)
     # Depth Anything V2 outputs disparity-like values where

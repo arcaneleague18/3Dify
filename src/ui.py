@@ -11,6 +11,8 @@ from config import (
 from depth_estimation import estimate_depth
 from stereo_generation import generate_right_eye
 from image_utils import format_stereo_output
+from ai_inpainting import inpaint_gaps
+
 def create_ui():
     with gr.Blocks(title="2D to 3D Stereoscopic Image Converter") as app:
         gr.Markdown("# 2D to 3D Stereoscopic Image Converter")
@@ -25,8 +27,8 @@ def create_ui():
                     focal_plane = gr.Slider(0.0, 1.0, value=0.0, step=0.05, label="Focal Plane (Zero Parallax)", info="0.0 = Background stays still, foreground pops out. 1.0 = Foreground stays still, background pushes in.")
                     depth_intensity = gr.Slider(0.1, 3.0, value=2.0, step=0.1, label="Depth Intensity (Gamma)", info="Adjusts the non-linear contrast of the depth map. Lower values bring the background closer, higher values push mid-tones deeper.")
                     smoothing = gr.Slider(0, 15, value=DEFAULT_DEPTH_SMOOTHING, step=1, label="Depth Smoothing", info="Bilateral filter size to reduce noise and rough edges on depth boundaries.")
-                    inpaint_radius = gr.Slider(1, 10, value=DEFAULT_INPAINTING_RADIUS, step=1, label="Inpainting Radius", info="Hole-filling size for pixel-shifting occluded areas.")
                     
+                fill_mode = gr.Radio(choices=["Algorithmic", "AI Inpainting"], value="Algorithmic", label="Background Fill Mode", info="Algorithmic is fast. AI Inpainting is high quality but requires GPU and ~2GB download on first run.")
                 output_format = gr.Dropdown(choices=OUTPUT_FORMATS, value="Anaglyph (Red/Cyan)", label="Output Format")
                 
                 generate_btn = gr.Button("Generate 3D Image", variant="primary")
@@ -41,7 +43,7 @@ def create_ui():
         # State to cache depth map
         depth_state = gr.State(None)
         
-        def process_image(img, s_strength, m_disp, f_plane, d_intensity, smooth, i_rad, out_fmt, current_depth):
+        def process_image(img, s_strength, m_disp, f_plane, d_intensity, smooth, f_mode, out_fmt, current_depth):
             if img is None:
                 return None, None, None, None, current_depth
             
@@ -62,8 +64,12 @@ def create_ui():
                 adjusted_depth = np.power(current_depth, d_intensity)
 
             # Generate right eye
-            right_bgr = generate_right_eye(img_bgr, adjusted_depth, s_strength, m_disp, smooth, i_rad, f_plane)
+            internal_f_mode = "ai" if f_mode == "AI Inpainting" else "algorithmic"
+            right_bgr, gap_mask = generate_right_eye(img_bgr, adjusted_depth, s_strength, m_disp, smooth, 5, f_plane, internal_f_mode)
             
+            if internal_f_mode == "ai":
+                right_bgr = inpaint_gaps(right_bgr, gap_mask)
+
             # Left eye is original
             left_bgr = img_bgr
             
@@ -94,7 +100,7 @@ def create_ui():
         )
         generate_btn.click(
             fn=process_image,
-            inputs=[input_image, stereo_strength, max_disparity, focal_plane, depth_intensity, smoothing, inpaint_radius, output_format, depth_state],
+            inputs=[input_image, stereo_strength, max_disparity, focal_plane, depth_intensity, smoothing, fill_mode, output_format, depth_state],
             outputs=[final_output, depth_output, left_output, right_output, depth_state]
         )
     return app
